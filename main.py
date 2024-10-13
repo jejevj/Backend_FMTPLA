@@ -4,15 +4,50 @@ import xmltodict
 from fastapi.responses import JSONResponse
 import json
 import os
+from pydantic import BaseModel
+from database import database, user_history
+
 
 app = FastAPI()
+
 
 FLICKR_FEED_URL = "https://www.flickr.com/services/feeds/photos_public.gne"
 
 # A global variable to hold the author data temporarily, or you can use a database for persistent storage
 author_data = []
 
+# Pydantic model for validation
+class UserHistory(BaseModel):
+    access_url: str
+    search_query: str
 
+# Connect to the database on startup
+@app.on_event("startup")
+async def startup():
+    await database.connect()
+
+# Disconnect from the database on shutdown
+@app.on_event("shutdown")
+async def shutdown():
+    await database.disconnect()
+
+# Insert into user_history table
+@app.post("/add-history")
+async def add_user_history(history: UserHistory):
+    query = user_history.insert().values(
+        access_url=history.access_url,
+        search_query=history.search_query
+    )
+    
+    await database.execute(query)
+    return {"message": "History entry added successfully"}
+
+# Get all user history records
+@app.get("/get-history")
+async def get_user_history():
+    query = user_history.select()
+    result = await database.fetch_all(query)
+    return result
 @app.get("/flickr-feed")
 async def get_flickr_feed(
     id: str = Query(None, description="A single user ID to fetch the feed for."),
